@@ -1,14 +1,5 @@
 import * as find from "./find-chrome.ts";
-import {
-  connectWebSocket,
-  isWebSocketCloseEvent,
-  isWebSocketPingEvent,
-  isWebSocketPongEvent
-} from "https://raw.githubusercontent.com/hashrock/deno_std/2cd472dab6969e7fdaa1539062d9ca35307e75e7/ws/mod.ts";
-import { encode } from "https://deno.land/std/strings/mod.ts";
-import { BufReader } from "https://deno.land/std/io/bufio.ts";
-import { TextProtoReader } from "https://deno.land/std/textproto/mod.ts";
-import { blue, green, red, yellow } from "https://deno.land/std/colors/mod.ts";
+import { connectWebSocket } from "https://raw.githubusercontent.com/hashrock/deno_std/2cd472dab6969e7fdaa1539062d9ca35307e75e7/ws/mod.ts";
 
 async function SEND(ws, command) {
   await ws.send(JSON.stringify(command));
@@ -58,7 +49,7 @@ async function main() {
   console.log(wsUrl);
 
   const ws = await connectWebSocket(wsUrl);
-  console.log(green("ws connected! (type 'close' to quit)"));
+  console.log("ws connected!");
 
   const targetsResponse = await SEND(ws, {
     id: 1,
