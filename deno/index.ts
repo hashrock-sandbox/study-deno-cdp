@@ -20,7 +20,7 @@ async function SEND(ws, command) {
 async function main() {
   const width = 400;
   const height = 400;
-  const dirName = "temp";
+  const dirName = await Deno.makeTempDir({ prefix: "deno_chrome_temp" });
   const args = [
     "--no-first-run", //ようこそみたいなのが表示されるのを防止
     "--disable-default-apps",
@@ -42,7 +42,7 @@ async function main() {
 
   const dev = text
     .toString()
-    .split("\r\n")
+    .split(/\r?\n/)
     .find(i => i.indexOf("DevTools listening on ") >= 0);
 
   const wsUrl = dev.replace("DevTools listening on ", "");

@@ -26,13 +26,13 @@ const newLineRegex = /\r?\n/;
 
 async function execute(args: string[]) {
   const proc = run({ args: args, stdout: "piped" })
-  return await proc.output()
+  return new TextDecoder().decode(await proc.output())
 }
 
 async function canAccess(file) {
   try {
     const fileInfo = await lstat(file);
-    return fileInfo.isFile()
+    return fileInfo.isFile() || fileInfo.isDirectory()
   } catch (e) {
     if (e.kind !== ErrorKind.NotFound) {
       console.error(e)
@@ -48,15 +48,19 @@ async function darwin(canary) {
       '/Versions/A/Frameworks/LaunchServices.framework' +
       '/Versions/A/Support/lsregister';
   const grepexpr = canary ? 'google chrome canary' : 'google chrome';
-  const result = await execute([`${LSREGISTER} -dump  | grep -i \'${grepexpr}\\?.app$\' | awk \'{$1=""; print $0}\'`]);
+  const result = await execute([LSREGISTER,"-dump"]);
+  const regex = new RegExp(`${grepexpr}\?.app$`, "ig")
+  const paths = result.split(newLineRegex).filter(i=>i.match(regex)).map(i=>i.replace(/\tpath: +/, ""))
 
-  const paths = result.toString().split(newLineRegex).filter(a => a).map(a => a.trim());
-  paths.unshift(canary ? '/Applications/Google Chrome Canary.app' : '/Applications/Google Chrome.app');
   for (const p of paths) {
     if (p.startsWith('/Volumes'))
       continue;
-    return path.join(p, canary ? '/Contents/MacOS/Google Chrome Canary' : '/Contents/MacOS/Google Chrome');
+    const inst = path.join(p, canary ? '/Contents/MacOS/Google Chrome Canary' : '/Contents/MacOS/Google Chrome');
+    if (canAccess(inst))
+      return inst;
+
   }
+  return undefined
 }
 
 /**
@@ -181,6 +185,7 @@ async function findChromeExecutables(folder) {
 
 export async function findChrome() {
   let executablePath
+  console.log(platform.os)
 
   // I think Deno users Always prefer canary by nature.
   if (platform.os === 'linux')
@@ -191,6 +196,8 @@ export async function findChrome() {
     executablePath = await darwin(true);
   if (executablePath)
     return { executablePath, type: 'canary' };
+
+    console.log("not found")
 
   // Then pick stable.
   if (platform.os === 'linux')
