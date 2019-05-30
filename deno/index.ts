@@ -16,12 +16,15 @@ async function SEND(ws, command) {
     for await (const msg of ws.receive()) {
         if (typeof msg === "string") {
             result = msg
-            break;
+            const obj = JSON.parse(result)
+            if (obj.id === command.id) {
+                break;
+            }
         }
     }
     console.log(result)
     return JSON.parse(result)
-  }
+}
 
 async function main() {
     const width = 400;
@@ -56,37 +59,44 @@ async function main() {
     const targetsResponse = await SEND(ws, {
         id: 1,
         method: "Target.getTargets"
-      });
-      const pageTarget = targetsResponse.result.targetInfos.find(
+    });
+    const pageTarget = targetsResponse.result.targetInfos.find(
         info => info.type === "page"
-      );
+    );
 
-      const sessionId = (await SEND(ws, {
+    const sessionId = (await SEND(ws, {
         id: 2,
         method: "Target.attachToTarget",
         params: {
-          targetId: pageTarget.targetId,
-          flatten: true
+            targetId: pageTarget.targetId,
+            flatten: true
         }
-      })).params.sessionId;
+    })).result.sessionId;
 
-      // Navigate the page using the session.
-      await SEND(ws, {
+    // Navigate the page using the session.
+    await SEND(ws, {
         sessionId,
-        id: 1, // Note that IDs are independent between sessions.
+        id: 3, // Note that IDs are independent between sessions.
         method: "Page.navigate",
         params: {
-          url: "https://pptr.dev"
+            url: "https://pptr.dev"
         }
-      });
+    });
 
-      await SEND(ws, {
+    await SEND(ws, {
         sessionId,
-        id: 1, // Note that IDs are independent between sessions.
+        id: 4, // Note that IDs are independent between sessions.
         method: "Runtime.addBinding",
         params: {
             name: "hello"
         }
-      });
+    });
+
+    for await (const msg of ws.receive()) {
+        if (typeof msg === "string") {
+            console.log(msg)
+            break;
+        }
+    }
 }
 main()
