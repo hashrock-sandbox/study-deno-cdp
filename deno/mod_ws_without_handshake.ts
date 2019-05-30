@@ -417,8 +417,10 @@ async function handshake(
   headers.set("upgrade", "websocket");
   headers.set("connection", "upgrade");
   headers.set("sec-websocket-key", key);
+  //これが必要っぽい
+  headers.set("Sec-WebSocket-Version", "13");
 
-  let headerStr = `GET ${pathname}?${searchParams || ""} HTTP/1.1\r\n`;
+  let headerStr = `GET ${pathname}${searchParams || ""} HTTP/1.1\r\n`;
   for (const [key, value] of headers) {
     headerStr += `${key}: ${value}\r\n`;
   }
@@ -476,12 +478,12 @@ export async function connectWebSocket(
   const conn = await Deno.dial("tcp", `${hostname}:${port}`);
   const bufWriter = new BufWriter(conn);
   const bufReader = new BufReader(conn);
-//   try {
-//     await handshake(url, headers, bufReader, bufWriter);
-//   } catch (err) {
-//     conn.close();
-//     throw err;
-//   }
+  try {
+    await handshake(url, headers, bufReader, bufWriter);
+  } catch (err) {
+    conn.close();
+    throw err;
+  }
   return new WebSocketImpl(conn, {
     bufWriter,
     bufReader
