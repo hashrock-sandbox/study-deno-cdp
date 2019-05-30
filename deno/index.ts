@@ -19,6 +19,7 @@ async function SEND(ws, command) {
             break;
         }
     }
+    console.log(result)
     return JSON.parse(result)
   }
 
@@ -49,61 +50,43 @@ async function main() {
     const wsUrl = dev.replace("DevTools listening on ", "");
     console.log(wsUrl);
 
-    const sock = await connectWebSocket(wsUrl);
+    const ws = await connectWebSocket(wsUrl);
     console.log(green("ws connected! (type 'close' to quit)"));
 
-    // (async function (): Promise<void> {
-    //     for await (const msg of sock.receive()) {
-    //         if (typeof msg === "string") {
-    //             console.log(yellow("< " + msg));
-    //         } else if (isWebSocketPingEvent(msg)) {
-    //             console.log(blue("< ping"));
-    //         } else if (isWebSocketPongEvent(msg)) {
-    //             console.log(blue("< pong"));
-    //         } else if (isWebSocketCloseEvent(msg)) {
-    //             console.log(red(`closed: code=${msg.code}, reason=${msg.reason}`));
-    //         }
-    //     }
-    // })();
-
-    const payload = JSON.stringify({
+    const targetsResponse = await SEND(ws, {
         id: 1,
         method: "Target.getTargets"
-    })
-    await sock.send(payload);
+      });
+      const pageTarget = targetsResponse.result.targetInfos.find(
+        info => info.type === "page"
+      );
 
-    let pageTarget = {
-        targetId : ""
-    }
-    for await (const msg of sock.receive()) {
-        if (typeof msg === "string") {
-            console.log(msg)
-            pageTarget = JSON.parse(msg).result.targetInfos.find(
-                info => info.type === "page"
-            );
-            console.log(pageTarget)
-            break;
-        }
-    }
-    console.log(pageTarget)
-    const payload2 = {
+      const sessionId = (await SEND(ws, {
         id: 2,
         method: "Target.attachToTarget",
         params: {
           targetId: pageTarget.targetId,
           flatten: true
         }
-      }
-      console.log(payload2)
-      for await (const msg of sock.receive()) {
-        if (typeof msg === "string") {
-            console.log(msg)
-            pageTarget = JSON.parse(msg).result.targetInfos.find(
-                info => info.type === "page"
-            );
-            console.log(pageTarget)
-            break;
+      })).params.sessionId;
+
+      // Navigate the page using the session.
+      await SEND(ws, {
+        sessionId,
+        id: 1, // Note that IDs are independent between sessions.
+        method: "Page.navigate",
+        params: {
+          url: "https://pptr.dev"
         }
-    }
+      });
+
+      await SEND(ws, {
+        sessionId,
+        id: 1, // Note that IDs are independent between sessions.
+        method: "Runtime.addBinding",
+        params: {
+            name: "hello"
+        }
+      });
 }
 main()
