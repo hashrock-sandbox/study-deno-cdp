@@ -1,5 +1,5 @@
 import * as find from "./find-chrome.ts";
-import { connectWebSocket } from "https://raw.githubusercontent.com/hashrock/deno_std/2cd472dab6969e7fdaa1539062d9ca35307e75e7/ws/mod.ts";
+import { connectWebSocket } from "https://deno.land/std/ws/mod.ts";
 
 async function SEND(ws, command) {
   await ws.send(JSON.stringify(command));
@@ -25,7 +25,7 @@ async function main() {
     "--no-first-run", //ようこそみたいなのが表示されるのを防止
     "--disable-default-apps",
     "--remote-debugging-port=9222",
-    "--user-data-dir=/" + dirName, //これがないとDevToolの接続受け付けてくれない
+    "--user-data-dir=" + dirName, //これがないとDevToolの接続受け付けてくれない
     "--app=https://deno.land/",
     "--disable-sync",
     `--window-size=${width},${height}`
