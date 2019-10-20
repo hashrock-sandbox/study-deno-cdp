@@ -7,12 +7,17 @@ async function main(){
     url: "http://localhost:5000/"
   })
   await chrome.send("Runtime.addBinding", {
-    name: "hello"
+    name: "hello",
+    params: {
+      name: "msg"
+    }
   })
   for await (const msg of chrome.ws.receive()) {
     if (typeof msg === "string") {
       console.log("Function called", msg);
-      // break;
+      await chrome.send("Runtime.evaluate", {
+        expression: `alert("Hello, Deno GUI")`
+      })
     }
   }
 }

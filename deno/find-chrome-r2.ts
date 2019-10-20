@@ -14,13 +14,22 @@
  * limitations under the License.
  */
 
- /**
+/**
  * taken from https://github.com/GoogleChromeLabs/carlo/blob/master/lib/find_chrome.js
  * Deno ported by hashrock
  */
 
+
+'use strict';
+const {env, run, lstat, ErrorKind} = Deno;
 import * as path from "https://deno.land/std/fs/path.ts";
-const {env, run, build, lstat, ErrorKind} = Deno;
+import {xrun} from "https://raw.githubusercontent.com/denoland/deno_std/master/prettier/util.ts"
+
+// const fs = require('fs');
+// const path = require('path');
+const execSync = require('child_process').execSync;
+const execFileSync = require('child_process').execFileSync;
+// const puppeteer = require('puppeteer-core');
 
 const newLineRegex = /\r?\n/;
 
@@ -29,38 +38,24 @@ async function execute(args: string[]) {
   return new TextDecoder().decode(await proc.output())
 }
 
-async function canAccess(file) {
-  try {
-    const fileInfo = await lstat(file);
-    return fileInfo.isFile() || fileInfo.isDirectory()
-  } catch (e) {
-    if (e.kind !== ErrorKind.NotFound) {
-      console.error(e)
-    } else {
-      console.log("Not Found: " + file)
-    }
-  }
-  return false
-}
-
-async function darwin(canary) {
+function darwin(canary) {
   const LSREGISTER = '/System/Library/Frameworks/CoreServices.framework' +
       '/Versions/A/Frameworks/LaunchServices.framework' +
       '/Versions/A/Support/lsregister';
   const grepexpr = canary ? 'google chrome canary' : 'google chrome';
-  const result = await execute([LSREGISTER,"-dump"]);
-  const regex = new RegExp(`${grepexpr}\?.app$`, "ig")
-  const paths = result.split(newLineRegex).filter(i=>i.match(regex)).map(i=>i.replace(/\tpath: +/, ""))
+  const result =
+      execSync(`${LSREGISTER} -dump  | grep -i \'${grepexpr}\\?.app$\' | awk \'{$1=""; print $0}\'`);
 
+  const installations = new Set();
+  const paths = result.toString().split(newLineRegex).filter(a => a).map(a => a.trim());
+  paths.unshift(canary ? '/Applications/Google Chrome Canary.app' : '/Applications/Google Chrome.app');
   for (const p of paths) {
     if (p.startsWith('/Volumes'))
       continue;
     const inst = path.join(p, canary ? '/Contents/MacOS/Google Chrome Canary' : '/Contents/MacOS/Google Chrome');
     if (canAccess(inst))
       return inst;
-
   }
-  return undefined
 }
 
 /**
@@ -69,18 +64,18 @@ async function darwin(canary) {
  * 2. Look into the directories where .desktop are saved on gnome based distro's
  * 3. Look for google-chrome-stable & google-chrome executables by using the which command
  */
-async function linux(canary) {
+function linux(canary) {
   let installations = [];
   const { HOME } = env();
+
   // Look into the directories where .desktop are saved on gnome based distro's
   const desktopInstallationFolders = [
     path.join(HOME, '.local/share/applications/'),
     '/usr/share/applications/',
   ];
-
-  for(const folder of desktopInstallationFolders){
-    installations = installations.concat(await findChromeExecutables(folder));
-  }
+  desktopInstallationFolders.forEach(folder => {
+    installations = installations.concat(findChromeExecutables(folder));
+  });
 
   // Look for google-chrome(-stable) & chromium(-browser) executables by using the which command
   const executables = [
@@ -94,11 +89,11 @@ async function linux(canary) {
       const output = await execute(['which', ...executable])
       const chromePath = output
           .toString().split(newLineRegex)[0];
-      installations.push(chromePath);
-    } catch (e) {
+      if (canAccess(chromePath))
+        installations.push(chromePath);
+      } catch (e) {
       // Not installed.
     }
-  }
 
   if (!installations.length)
     throw new Error('The environment variable CHROME_PATH must be set to executable of a build of Chromium version 54.0 or later.');
@@ -111,27 +106,26 @@ async function linux(canary) {
     {regex: /chromium$/, weight: 47},
   ];
 
+  if (process.env.CHROME_PATH)
+    priorities.unshift({regex: new RegExp(`${process.env.CHROME_PATH}`), weight: 101});
+
   return sort(uniq(installations.filter(Boolean)), priorities)[0];
 }
 
-async function win32(canary) {
+function win32(canary) {
   const suffix = canary ?
     `${path.sep}Google${path.sep}Chrome SxS${path.sep}Application${path.sep}chrome.exe` :
     `${path.sep}Google${path.sep}Chrome${path.sep}Application${path.sep}chrome.exe`;
-    const ev = env()
-
   const prefixes = [
-    ev.LOCALAPPDATA, ev.PROGRAMFILES, ev['ProgramFiles(x86)']
+    process.env.LOCALAPPDATA, process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']
   ].filter(Boolean);
 
   let result;
-  for(let prefix of prefixes){
+  prefixes.forEach(prefix => {
     const chromePath = path.join(prefix, suffix);
-    if (await canAccess(chromePath)){
+    if (canAccess(chromePath))
       result = chromePath;
-    }
-  }
-
+  });
   return result;
 }
 
@@ -152,15 +146,30 @@ function sort(installations, priorities) {
       .map(pair => pair.path);
 }
 
+async function canAccess(file) {
+  try {
+    const fileInfo = await lstat(file);
+    return fileInfo.isFile() || fileInfo.isDirectory()
+  } catch (e) {
+    if (e.kind !== ErrorKind.NotFound) {
+      console.error(e)
+    } else {
+      console.log("Not Found: " + file)
+    }
+  }
+  return false
+}
+
 function uniq(arr) {
   return Array.from(new Set(arr));
 }
 
-async function findChromeExecutables(folder) {
+function findChromeExecutables(folder) {
   const argumentsRegex = /(^[^ ]+).*/; // Take everything up to the first space
   const chromeExecRegex = '^Exec=\/.*\/(google-chrome|chrome|chromium)-.*';
 
   const installations = [];
+  if (canAccess(folder)) {
     // Output of the grep & print looks like:
     //    /opt/google/chrome/google-chrome --profile-directory
     //    /home/user/Downloads/chrome-linux/chrome-wrapper %U
@@ -169,45 +178,69 @@ async function findChromeExecutables(folder) {
     // Some systems do not support grep -R so fallback to -r.
     // See https://github.com/GoogleChrome/chrome-launcher/issues/46 for more context.
     try {
-      execPaths = await execute([`grep -ER "${chromeExecRegex}" ${folder} | awk -F '=' '{print $2}'`])
+      execPaths = execSync(`grep -ER "${chromeExecRegex}" ${folder} | awk -F '=' '{print $2}'`);
     } catch (e) {
-      execPaths = await execute([`grep -Er "${chromeExecRegex}" ${folder} | awk -F '=' '{print $2}'`])
+      execPaths = execSync(`grep -Er "${chromeExecRegex}" ${folder} | awk -F '=' '{print $2}'`);
     }
 
     execPaths = execPaths.toString()
         .split(newLineRegex)
         .map(execPath => execPath.replace(argumentsRegex, '$1'));
 
-    execPaths.forEach(execPath => installations.push(execPath));
+    execPaths.forEach(execPath => canAccess(execPath) && installations.push(execPath));
+  }
 
   return installations;
 }
 
-export async function findChrome() {
-  let executablePath
 
-  // I think Deno users Always prefer canary by nature.
-  if (build.os === 'linux')
-    executablePath = await linux(true);
-  else if (build.os === 'win')
-    executablePath = await win32(true);
-  else if (build.os === 'mac')
-    executablePath = await darwin(true);
-  if (executablePath)
-    return { executablePath, type: 'canary' };
+async function findChrome(options) {
+  if (options.executablePath)
+    return { executablePath: options.executablePath, type: 'user' };
+
+  type OS = 'linux' | 'win' | 'mac'
+  const platform: OS = platform.os;
+
+  const config = new Set(options.channel || ['stable']);
+  let executablePath;
+  // Always prefer canary.
+  if (config.has('canary') || config.has('*')) {
+    if (platform === 'linux')
+      executablePath = linux(true);
+    else if (platform === 'win')
+      executablePath = win32(true);
+    else if (platform === 'mac')
+      executablePath = darwin(true);
+    if (executablePath)
+      return { executablePath, type: 'canary' };
+  }
 
   // Then pick stable.
-  if (build.os === 'linux')
-    executablePath = await linux(false);
-  else if (build.os === 'win')
-    executablePath = await win32(false);
-  else if (build.os === 'mac')
-    executablePath = await darwin(false);
-  if (executablePath)
-    return { executablePath, type: 'stable' };
+  if (config.has('stable') || config.has('*')) {
+    if (platform === 'linux')
+      executablePath = linux();
+    else if (platform === 'win')
+      executablePath = win32();
+    else if (platform === 'mac')
+      executablePath = darwin();
+    if (executablePath)
+      return { executablePath, type: 'stable' };
+  }
 
-  console.log(executablePath)
+  // always prefer puppeteer revision of chromium
+  // if (config.has('chromium') || config.has('*')) {
+  //   const revisionInfo = await downloadChromium(options);
+  //   return { executablePath: revisionInfo.executablePath, type: revisionInfo.revision };
+  // }
 
-  // We don't need download chromium for Deno.
+  // for (const item of config) {
+  //   if (!item.startsWith('r'))
+  //     continue;
+  //   const revisionInfo = await downloadChromium(options, item.substring(1));
+  //   return { executablePath: revisionInfo.executablePath, type: revisionInfo.revision };
+  // }
+
   return {};
 }
+
+module.exports = findChrome;
